@@ -108,3 +108,14 @@ describe('codex installs from its hard-wired /add-codex skill in-process', () =>
     expect(src).not.toContain('setup/add-codex.sh');
   });
 });
+
+describe('subscription auth finds setup-installed CLIs', () => {
+  it('repairs PATH before probing for onecli', () => {
+    const src = read('setup/register-claude-token.sh');
+    const pathRepair = src.indexOf('export PATH="$HOME/.local/bin:$PATH"');
+    const onecliProbe = src.indexOf('command -v onecli');
+
+    expect(pathRepair).toBeGreaterThanOrEqual(0);
+    expect(pathRepair).toBeLessThan(onecliProbe);
+  });
+});

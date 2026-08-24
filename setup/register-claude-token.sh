@@ -24,6 +24,13 @@ set -euo pipefail
 SECRET_NAME="${SECRET_NAME:-Anthropic}"
 HOST_PATTERN="${HOST_PATTERN:-api.anthropic.com}"
 
+# Setup installs OneCLI and Claude into ~/.local/bin, which a fresh
+# non-login shell may not inherit.
+if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+  export PATH="$HOME/.local/bin:$PATH"
+fi
+hash -r 2>/dev/null || true
+
 command -v onecli >/dev/null \
   || { echo "onecli not found. Install it first (see /setup §4)." >&2; exit 1; }
 
@@ -38,11 +45,8 @@ if ! command -v claude >/dev/null 2>&1; then
     echo "and re-run setup." >&2
     exit 1
   fi
-  # install-claude.sh PATH additions are scoped to its own subshell; redo
-  # them here so the rest of this script can see the fresh `claude` binary.
-  if [ -d "$HOME/.local/bin" ] && [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
-    export PATH="$HOME/.local/bin:$PATH"
-  fi
+  # install-claude.sh PATH additions are scoped to its own subshell. Refresh
+  # Bash's command cache so the PATH repaired above sees the new binary.
   hash -r 2>/dev/null || true
 fi
 

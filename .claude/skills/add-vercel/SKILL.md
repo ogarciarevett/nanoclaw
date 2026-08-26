@@ -141,25 +141,17 @@ pnpm exec vitest run src/vercel-manifest.test.ts
 
 The test asserts both halves of the install: a pinned `vercel` entry in `container/cli-tools.json`, and the container skill at `container/skills/vercel-cli/`. Either alone is a broken install — a manifest entry with no skill leaves the agent a binary nobody told it about, and a skill with no entry tells it to run a command that is not there.
 
-## Phase 5: Sync Skills to Running Agent Groups
+## Phase 5: Restart Running Containers
 
-Container skills are copied once at group creation and not auto-synced. After installing or updating a container skill, sync it to all existing agent groups:
+`container/skills/` is mounted read-only into every agent container. Each
+group's `.claude-shared/skills/` entries are symlinks that are refreshed when
+the container spawns, so restart every group instead of copying skills into
+session directories:
 
 ```bash
-for session_dir in data/v2-sessions/ag-*; do
-  if [ -d "$session_dir/.claude-shared/skills" ]; then
-    rsync -a container/skills/ "$session_dir/.claude-shared/skills/"
-    echo "Synced skills to: $session_dir"
-  fi
+ncl groups list --json | jq -r '.data[].id' | while read -r gid; do
+  ncl groups restart --id "$gid" >/dev/null || { echo "could not restart $gid" >&2; exit 1; }
 done
-```
-
-## Phase 6: Restart Running Containers
-
-Stop all running agent containers so they pick up the new skills on next wake:
-
-```bash
-docker ps --filter label=nanoclaw-session -q | xargs -r docker stop
 ```
 
 ## Done

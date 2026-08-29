@@ -467,6 +467,24 @@ describe('error result with no <message> envelope', () => {
     expect(pushes).toHaveLength(1);
     expect(pushes[0]).toContain('was not delivered');
   });
+
+  it('deduplicates a rate-limit notice until a successful turn starts a new incident', async () => {
+    const rateLimitText = 'Session limit reached (resets 2026-08-29T10:00:00.000Z)';
+    async function* events(): AsyncGenerator<ProviderEvent> {
+      yield { type: 'error', message: 'Rate limit', retryable: false, classification: 'rate_limit' };
+      yield { type: 'result', text: rateLimitText, isError: true };
+      yield { type: 'error', message: 'Rate limit', retryable: false, classification: 'rate_limit' };
+      yield { type: 'result', text: rateLimitText, isError: true };
+      yield { type: 'result', text: null };
+      yield { type: 'error', message: 'Rate limit', retryable: false, classification: 'rate_limit' };
+      yield { type: 'result', text: rateLimitText, isError: true };
+    }
+    const query: AgentQuery = { push: () => {}, end: () => {}, events: events(), abort: () => {} };
+
+    await processQuery(query, ERR_ROUTING, ['m1'], 'claude', undefined, 'prompt', undefined);
+
+    expect(getUndeliveredMessages()).toHaveLength(2);
+  });
 });
 
 // --- Task-run turn wiring: the REAL processQuery path (one-door) ---

@@ -360,6 +360,8 @@ export async function processQuery(
   // Once-per-turn guard for the task-run "<message> block was not delivered"
   // nudge — mirrors unwrappedNudged for chat turns.
   let taskBlockNudged = false;
+  let pendingErrorClassification: string | undefined;
+  let lastRateLimitNotice: string | undefined;
   // How many <message> blocks were delivered from 'text' events this turn
   // (chat runs, emitsMidTurnText providers only). A frame-local count, never
   // keyed by content: it feeds the result door's nudge decision ("did this
@@ -546,6 +548,8 @@ export async function processQuery(
           midTurnSent += scan.delivered;
           midTurnTail = scan.tail;
         }
+      } else if (event.type === 'error') {
+        pendingErrorClassification = event.classification;
       } else if (event.type === 'result') {
         // A result — with or without text — means the turn is done. Mark
         // the initial batch completed now so the host sweep doesn't see
@@ -554,6 +558,7 @@ export async function processQuery(
         // (send_message) mid-turn, or the message may not need a response
         // at all — either way the turn is finished.
         markCompleted(initialBatchIds);
+        if (event.isError !== true) lastRateLimitNotice = undefined;
         if (event.text) {
           const { sent, hasUnwrapped, taskBlocks, resultBlocks } = await dispatchResultText(event.text, routing, {
             midTurnSent,
@@ -582,7 +587,13 @@ export async function processQuery(
             // <message> envelope: deliver the notice instead of dropping it as
             // scratchpad, and skip the re-wrap nudge — it would just re-hammer
             // the failing gateway turn after turn.
-            await deliverErrorResult(event.text, routing);
+            const isRateLimit = pendingErrorClassification === 'rate_limit' || pendingErrorClassification === 'quota';
+            if (!isRateLimit || event.text !== lastRateLimitNotice) {
+              await deliverErrorResult(event.text, routing);
+              lastRateLimitNotice = isRateLimit ? event.text : undefined;
+            } else {
+              log('Suppressing duplicate rate-limit notice');
+            }
             notifyExchangeComplete(onExchangeComplete, {
               prompt: archivePrompts[0] ?? initialPrompt,
               result: event.text,
@@ -638,6 +649,7 @@ export async function processQuery(
         // buffer dies with the turn: a fragment that never closed is not
         // carried into the next turn — the wrap-nudge owns that case.
         midTurnSent = 0;
+        pendingErrorClassification = undefined;
         turnStartSeq = maxOutboundSeq();
         midTurnTail = '';
       }

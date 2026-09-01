@@ -12,7 +12,8 @@
 
 set -euo pipefail
 
-VERSION="0.14.3"
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+VERSION=$(node -p "require(process.argv[1])['signal-cli']" "${SCRIPT_DIR}/../versions.json")
 INSTALL_DIR="${HOME}/.local/bin"
 
 emit_status() {

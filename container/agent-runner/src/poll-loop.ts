@@ -271,8 +271,15 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
         prompt,
         continuation,
         midTurnCompleteDelivery,
+        config.provider.maybeRotateContinuation
+          ? (id) => config.provider.maybeRotateContinuation!(id, config.cwd)
+          : undefined,
       );
-      if (result.continuation && result.continuation !== continuation) {
+      if (result.rotateReason) {
+        log(`Rotating session — ${result.rotateReason}; starting fresh`);
+        clearContinuation(config.providerName);
+        continuation = undefined;
+      } else if (result.continuation && result.continuation !== continuation) {
         continuation = result.continuation;
         setContinuation(config.providerName, continuation);
       }
@@ -355,6 +362,7 @@ function formatMessagesWithCommands(
 
 interface QueryResult {
   continuation?: string;
+  rotateReason?: string;
 }
 
 export async function processQuery(
@@ -375,11 +383,13 @@ export async function processQuery(
    * delivery-inert and the final result stays the single delivery door.
    */
   midTurnCompleteDelivery = false,
+  maybeRotateContinuation?: (continuation: string) => string | null,
 ): Promise<QueryResult> {
   // adoptTurn mutates routing in place; copy so the caller's batch routing
   // (used for the query error notice) stays the first message's.
   routing = { ...routing };
   let queryContinuation: string | undefined;
+  let rotateReason: string | undefined;
   let done = false;
   let unwrappedNudged = false;
   // Once-per-turn guard for the task-run "<message> block was not delivered"
@@ -698,7 +708,13 @@ export async function processQuery(
         midTurnTail = '';
         const next = queuedTurns.shift();
         if (next) adoptTurn(next);
-        else answering = false;
+        else {
+          answering = false;
+          if (archivePrompts.length === 0 && queryContinuation) {
+            rotateReason = maybeRotateContinuation?.(queryContinuation) ?? undefined;
+            if (rotateReason) query.end();
+          }
+        }
       }
     }
   } catch (err) {
@@ -715,7 +731,7 @@ export async function processQuery(
     clearInterval(pollHandle);
   }
 
-  return { continuation: queryContinuation };
+  return { continuation: queryContinuation, rotateReason };
 }
 
 function notifyExchangeComplete(

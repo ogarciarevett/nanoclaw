@@ -6,7 +6,7 @@ import { getPendingMessages } from './db/messages-in.js';
 import { getContinuation, setContinuation } from './db/session-state.js';
 import { getSessionRouting } from './db/session-routing.js';
 import { MockProvider } from './providers/mock.js';
-import type { ProviderExchange } from './providers/types.js';
+import type { ProviderExchange, QueryInput } from './providers/types.js';
 import { runPollLoop } from './poll-loop.js';
 
 const MOCK_PROVIDER_CONTRACT = {
@@ -291,6 +291,38 @@ describe('poll loop integration', () => {
     const out = getUndeliveredMessages();
     expect(out.length).toBeGreaterThanOrEqual(1);
 
+    await loopPromise.catch(() => {});
+  });
+
+  it('starts a fresh query when a warm continuation needs rotation between turns', async () => {
+    class RotatingProvider extends MockProvider {
+      readonly inputs: QueryInput[] = [];
+      rotationChecks = 0;
+
+      maybeRotateContinuation(): string | null {
+        this.rotationChecks += 1;
+        return this.rotationChecks === 1 ? null : 'transcript exceeds the size limit';
+      }
+
+      override query(input: QueryInput) {
+        this.inputs.push(input);
+        return super.query(input);
+      }
+    }
+
+    setContinuation('mock', 'existing-session');
+    insertMessage('m1', { sender: 'Alice', text: 'first turn' });
+
+    const provider = new RotatingProvider({}, () => '<message to="discord-test">done</message>');
+    const controller = new AbortController();
+    const loopPromise = runPollLoopWithTimeout(provider, controller.signal, 4000);
+
+    await waitFor(() => provider.rotationChecks >= 2, 2000);
+    insertMessage('m2', { sender: 'Alice', text: 'second turn' });
+    await waitFor(() => provider.inputs.length === 2, 2000);
+    controller.abort();
+
+    expect(provider.inputs.map((input) => input.continuation)).toEqual(['existing-session', undefined]);
     await loopPromise.catch(() => {});
   });
 

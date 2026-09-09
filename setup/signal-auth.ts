@@ -35,6 +35,9 @@
  * Selecting a different existing account is a driver concern.
  */
 import { spawn, spawnSync } from 'child_process';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 import { emitStatus } from './status.js';
 
@@ -48,7 +51,9 @@ interface SignalAccount {
 }
 
 function cliPath(): string {
-  return process.env.SIGNAL_CLI_PATH || 'signal-cli';
+  if (process.env.SIGNAL_CLI_PATH) return process.env.SIGNAL_CLI_PATH;
+  const installedPath = join(homedir(), '.local/bin/signal-cli');
+  return existsSync(installedPath) ? installedPath : 'signal-cli';
 }
 
 /**

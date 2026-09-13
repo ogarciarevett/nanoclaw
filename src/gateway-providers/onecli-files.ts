@@ -64,6 +64,7 @@ export function stageOnecliFile(dataDir: string, kind: 'ca' | 'combined' | 'stub
   // future mounts; existing bind mounts keep their old inode.
   const temporary = path.join(directory, `.pending-${randomUUID()}`);
   const fd = fs.openSync(temporary, 'wx', mode);
+  let failure: unknown;
   try {
     try {
       fs.writeFileSync(fd, content);
@@ -86,7 +87,7 @@ export function stageOnecliFile(dataDir: string, kind: 'ca' | 'combined' | 'stub
         // removed and retried. validate() still refuses symlinks/directories
         // and files owned by another user.
         try {
-          if (validate()) return destination;
+          if (validate()) break;
           fs.unlinkSync(destination);
         } catch (validationError) {
           if ((validationError as NodeJS.ErrnoException).code !== 'ENOENT') throw validationError;
@@ -95,12 +96,18 @@ export function stageOnecliFile(dataDir: string, kind: 'ca' | 'combined' | 'stub
       }
     }
     if (!validate()) throw new Error(`OneCLI staged file validation failed after publish: ${destination}`);
-    return destination;
-  } finally {
-    try {
-      fs.unlinkSync(temporary);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    fs.unlinkSync(temporary);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT' && failure === undefined) {
+      failure = error;
     }
   }
+  if (failure !== undefined) {
+    throw failure;
+  }
+  return destination;
 }

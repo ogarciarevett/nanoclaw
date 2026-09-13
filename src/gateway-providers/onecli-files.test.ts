@@ -94,4 +94,16 @@ describe('persistent OneCLI files', () => {
     expect(fs.readdirSync(path.join(dir, 'onecli'))).toEqual(['.pending-unrelated']);
     expect(fs.readFileSync(unrelated, 'utf8')).toBe('keep');
   });
+
+  it('preserves the staging failure when temporary cleanup also fails', () => {
+    fs.mkdirSync(path.join(dir, 'onecli'), { mode: 0o700 });
+    vi.spyOn(fs, 'writeFileSync').mockImplementation(() => {
+      throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    });
+    vi.spyOn(fs, 'unlinkSync').mockImplementation(() => {
+      throw Object.assign(new Error('cleanup denied'), { code: 'EACCES' });
+    });
+
+    expect(() => stageOnecliFile(dir, 'stub', 'sensitive')).toThrow('disk full');
+  });
 });

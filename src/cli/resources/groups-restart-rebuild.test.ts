@@ -25,11 +25,17 @@ vi.mock('../../container-runner.js', () => ({
 vi.mock('../../container-restart.js', () => ({
   restartAgentGroupContainers: vi.fn().mockReturnValue(2),
 }));
+vi.mock('../../session-manager.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../session-manager.js')>()),
+  writeSessionMessage: vi.fn().mockResolvedValue(undefined),
+}));
 vi.mock('../../log.js', () => ({
   log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), fatal: vi.fn() },
 }));
 
-import { buildAgentGroupImage } from '../../container-runner.js';
+import { buildAgentGroupImage, killContainer } from '../../container-runner.js';
+import { writeSessionMessage } from '../../session-manager.js';
+import { lookup } from '../registry.js';
 import { restartAgentGroupContainers } from '../../container-restart.js';
 import { DockerSessionDriver } from '../../drivers/docker-driver.js';
 import { resetSessionDriver } from '../../drivers/index.js';
@@ -107,5 +113,47 @@ describe('groups restart --rebuild gates on the imageBuild capability', () => {
       expect((resp as OkResponse).data).toMatchObject({ restarted: 2, rebuilt: false });
       expect(buildAgentGroupImage).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('groups restart target after approval', () => {
+  const caller = {
+    caller: 'agent',
+    agentGroupId: 'caller-group',
+    sessionId: 'caller-session',
+    messagingGroupId: 'chat',
+  } as const;
+
+  it.each([false, true])('restarts a foreign group without touching the caller, rebuild=%s', async (rebuild) => {
+    resetSessionDriver(new DockerSessionDriver(FIXTURE_POLICY));
+    const command = lookup('groups-restart');
+    if (!command) throw new Error('groups-restart is not registered');
+
+    const result = await command.handler(
+      command.parseArgs({ id: 'target-group', message: 'check in', rebuild }),
+      caller,
+    );
+
+    expect(result).toEqual({ restarted: 2, rebuilt: rebuild });
+    expect(restartAgentGroupContainers).toHaveBeenCalledExactlyOnceWith(
+      'target-group',
+      'restarted via ncl',
+      'check in',
+    );
+    expect(killContainer).not.toHaveBeenCalled();
+    expect(writeSessionMessage).not.toHaveBeenCalled();
+    if (rebuild) expect(buildAgentGroupImage).toHaveBeenCalledExactlyOnceWith('target-group');
+    else expect(buildAgentGroupImage).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, 'caller-group'])('keeps same-group restarts scoped to the calling session, id=%s', async (id) => {
+    const command = lookup('groups-restart');
+    if (!command) throw new Error('groups-restart is not registered');
+
+    const result = await command.handler(command.parseArgs(id ? { id } : {}), caller);
+
+    expect(result).toEqual({ restarted: 1, rebuilt: false });
+    expect(killContainer).toHaveBeenCalledExactlyOnceWith('caller-session', 'restarted via ncl', undefined);
+    expect(restartAgentGroupContainers).not.toHaveBeenCalled();
   });
 });

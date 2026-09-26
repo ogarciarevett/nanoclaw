@@ -325,7 +325,8 @@ registerResource({
       access: 'approval',
       description:
         'Restart containers for a group. Use --id <group-id> [--rebuild] [--message <text>]. ' +
-        'From inside a container, --id is auto-filled and only the calling session is restarted. ' +
+        'From inside a container, omitting --id or selecting its own group restarts only the calling session. ' +
+        "An approved restart of another group restarts that group's running containers. " +
         '--rebuild rebuilds the container image first (required for package changes). ' +
         '--message sets an on-wake instruction for the fresh container to act on when it starts — ' +
         'use this when you need to continue after the restart (e.g. verify a new tool works, notify the user). ' +
@@ -351,8 +352,8 @@ registerResource({
         }
         const message = args.message as string | undefined;
 
-        // From an agent: scope to the calling session only
-        if (ctx.caller === 'agent') {
+        // Same-group agent restarts target only the calling session.
+        if (ctx.caller === 'agent' && id === ctx.agentGroupId) {
           if (message) {
             await writeSessionMessage(id, ctx.sessionId, {
               id: `restart-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -380,7 +381,7 @@ registerResource({
           return { restarted: 1, rebuilt: !!args.rebuild };
         }
 
-        // From the host: restart all running containers in the group
+        // Host and approved cross-group calls restart the selected group.
         const count = await restartAgentGroupContainers(id, 'restarted via ncl', message);
         return { restarted: count, rebuilt: !!args.rebuild };
       },

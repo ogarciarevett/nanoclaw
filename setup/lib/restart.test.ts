@@ -47,49 +47,53 @@ afterEach(() => {
 });
 
 describe.runIf(process.platform !== 'win32')('restart helper', () => {
-  it.each(['0', '1'])('restarts via nohup with FORCE_COLOR=%s', (forceColor) => {
-    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-restart-')));
-    roots.push(root);
-    const lib = path.join(root, 'setup', 'lib');
-    const bin = path.join(root, 'fixture-bin');
-    fs.mkdirSync(lib, { recursive: true });
-    fs.mkdirSync(bin);
-    fs.mkdirSync(path.join(root, 'data'));
-    for (const name of ['host-status.mjs', 'restart.sh', 'install-slug.sh']) {
-      fs.copyFileSync(new URL(`./${name}`, import.meta.url), path.join(lib, name));
-    }
+  it.each(['0', '1'])(
+    'restarts via nohup with FORCE_COLOR=%s',
+    (forceColor) => {
+      const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-restart-')));
+      roots.push(root);
+      const lib = path.join(root, 'setup', 'lib');
+      const bin = path.join(root, 'fixture-bin');
+      fs.mkdirSync(lib, { recursive: true });
+      fs.mkdirSync(bin);
+      fs.mkdirSync(path.join(root, 'data'));
+      for (const name of ['host-status.mjs', 'restart.sh', 'install-slug.sh']) {
+        fs.copyFileSync(new URL(`./${name}`, import.meta.url), path.join(lib, name));
+      }
 
-    fs.writeFileSync(path.join(bin, 'uname'), '#!/bin/sh\necho Linux\n', { mode: 0o755 });
-    fs.writeFileSync(path.join(bin, 'systemctl'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-    fs.writeFileSync(path.join(bin, 'sudo'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-    const fixtureHostPath = path.join(root, 'fixture-host.cjs');
-    fs.writeFileSync(fixtureHostPath, fixtureHost);
-    fs.writeFileSync(
-      path.join(root, 'start-nanoclaw.sh'),
-      `#!/bin/bash
+      fs.writeFileSync(path.join(bin, 'uname'), '#!/bin/sh\necho Linux\n', { mode: 0o755 });
+      fs.writeFileSync(path.join(bin, 'systemctl'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+      fs.writeFileSync(path.join(bin, 'sudo'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+      const fixtureHostPath = path.join(root, 'fixture-host.cjs');
+      fs.writeFileSync(fixtureHostPath, fixtureHost);
+      fs.writeFileSync(
+        path.join(root, 'start-nanoclaw.sh'),
+        `#!/bin/bash
 set -e
 touch ${JSON.stringify(path.join(root, 'launcher-ran'))}
 nohup ${JSON.stringify(process.execPath)} ${JSON.stringify(fixtureHostPath)} ${JSON.stringify(
-        path.join(root, 'data', 'ncl.sock'),
-      )} </dev/null >/dev/null 2>&1 &
+          path.join(root, 'data', 'ncl.sock'),
+        )} </dev/null >/dev/null 2>&1 &
 echo $! > ${JSON.stringify(path.join(root, 'nanoclaw.pid'))}
 `,
-      { mode: 0o755 },
-    );
+        { mode: 0o755 },
+      );
 
-    execFileSync('/bin/bash', [path.join(lib, 'restart.sh')], {
-      cwd: root,
-      env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH ?? ''}`,
-        NANOCLAW_READY_TIMEOUT_MS: '10000',
-        FORCE_COLOR: forceColor,
-      },
-      stdio: 'pipe',
-      timeout: 15000,
-    });
+      execFileSync('/bin/bash', [path.join(lib, 'restart.sh')], {
+        cwd: root,
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH ?? ''}`,
+          NANOCLAW_READY_TIMEOUT_MS: '10000',
+          FORCE_COLOR: forceColor,
+        },
+        stdio: 'pipe',
+        timeout: 15000,
+      });
 
-    expect(fs.existsSync(path.join(root, 'launcher-ran'))).toBe(true);
-    expect(Number(fs.readFileSync(path.join(root, 'nanoclaw.pid'), 'utf8'))).toBeGreaterThan(0);
-  }, 20000);
+      expect(fs.existsSync(path.join(root, 'launcher-ran'))).toBe(true);
+      expect(Number(fs.readFileSync(path.join(root, 'nanoclaw.pid'), 'utf8'))).toBeGreaterThan(0);
+    },
+    20000,
+  );
 });

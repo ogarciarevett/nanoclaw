@@ -212,6 +212,21 @@ afterEach(() => {
 });
 
 describe('update-nanoclaw transaction end to end', () => {
+  it('creates a lightweight backup tag when the operator signs tags by default', () => {
+    const fixture = createForkFixture();
+    previousUpdateDir = process.env.NANOCLAW_UPDATE_DIR;
+    process.env.NANOCLAW_UPDATE_DIR = temp('nanoclaw-update-state-');
+    exec(fixture.install, 'git', ['config', 'tag.gpgSign', 'true']);
+    const { runtime } = fakeRuntime(fixture.install);
+
+    const state = prepareUpdate({ projectRoot: fixture.install, upstreamRef: 'upstream/main' }, runtime);
+
+    expect(state.phase).toBe('prepared');
+    expect(exec(fixture.install, 'git', ['cat-file', '-t', `refs/tags/${state.backupTag}`])).toBe('commit');
+    expect(exec(fixture.install, 'git', ['rev-parse', `refs/tags/${state.backupTag}`])).toBe(fixture.originalHead);
+    expect(exec(fixture.install, 'git', ['config', 'tag.gpgSign'])).toBe('true');
+  });
+
   it('applies an implicit OneCLI skill before stamping the extracted gateway selection', async () => {
     const fixture = createForkFixture({ gatewayExtraction: true });
     previousUpdateDir = process.env.NANOCLAW_UPDATE_DIR;

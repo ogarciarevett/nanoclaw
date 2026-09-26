@@ -47,8 +47,8 @@ afterEach(() => {
 });
 
 describe.runIf(process.platform !== 'win32')('restart helper', () => {
-  it('uses the nohup launcher when systemd cannot restart the install', () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-restart-'));
+  it.each(['0', '1'])('restarts via nohup with FORCE_COLOR=%s', (forceColor) => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'nanoclaw-restart-')));
     roots.push(root);
     const lib = path.join(root, 'setup', 'lib');
     const bin = path.join(root, 'fixture-bin');
@@ -83,6 +83,7 @@ echo $! > ${JSON.stringify(path.join(root, 'nanoclaw.pid'))}
         ...process.env,
         PATH: `${bin}:${process.env.PATH ?? ''}`,
         NANOCLAW_READY_TIMEOUT_MS: '10000',
+        FORCE_COLOR: forceColor,
       },
       stdio: 'pipe',
       timeout: 15000,

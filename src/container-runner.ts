@@ -349,6 +349,12 @@ export function wakeContainer(session: Session): Promise<boolean> {
   return promise;
 }
 
+async function requireSpawnSession(session: Session): Promise<void> {
+  if (!(await getSession(session.id)) || !(await getAgentGroup(session.agent_group_id))) {
+    throw new Error(`Session ${session.id} or its agent group was deleted during spawn`);
+  }
+}
+
 async function spawnContainer(session: Session): Promise<void> {
   if (pendingAdoptions.has(session.id)) {
     // A running container is waiting to be re-fenced after a failed adoption
@@ -439,6 +445,8 @@ async function spawnContainer(session: Session): Promise<void> {
       throw new Error(`session ${session.id} is claimed by another live host process — not spawning a duplicate`);
     }
 
+    await requireSpawnSession(session);
+
     // Clear any orphan heartbeat from a previous container instance — the sweep's
     // ceiling check treats a missing file as "fresh spawn, give grace". Without
     // this, the stale mtime can trigger an immediate kill before the new container
@@ -472,7 +480,8 @@ async function spawnContainer(session: Session): Promise<void> {
     afterStart: () => {
       return markContainerRunning(session.id);
     },
-    beforeStart: () => {
+    beforeStart: async () => {
+      await requireSpawnSession(session);
       if (
         gatewayUnavailableReason ||
         admissionGeneration !== gatewayAdmissionGeneration ||
